@@ -80,8 +80,20 @@ public class DavFileClient {
             if (mimeType == null || mimeType.equals("application/octet-stream")) {
                 mimeType = new Tika().detect(name + "." + ext);
             }
-            final String newUrl = folderUrl + "/" + name + "." + ext;
-            sardine.put(newUrl, inputStream, mimeType);
+            if (!sardine.exists(folderUrl)) {
+                final List<String> split = Arrays.asList(folderUrl.split("/"));
+                for (int i = split.size(); i > 1; --i) {
+                    final String parentUrl = String.join("/", split.subList(0, i));
+                    if (sardine.exists(parentUrl)) {
+                        for (int j = i; j < split.size(); ++j) {
+                            final String toCreate = String.join("/", split.subList(0, j));
+                            sardine.createDirectory(toCreate);
+                        }
+                        break;
+                    }
+                }
+            }
+            sardine.put(url, inputStream, mimeType);
             revision += 1;
         }
     }
