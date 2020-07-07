@@ -85,7 +85,7 @@ public class DavFileClient {
                 for (int i = split.size(); i > 1; --i) {
                     final String parentUrl = String.join("/", split.subList(0, i));
                     if (sardine.exists(parentUrl)) {
-                        for (int j = i; j < split.size(); ++j) {
+                        for (int j = i; j <= split.size(); ++j) {
                             final String toCreate = String.join("/", split.subList(0, j));
                             sardine.createDirectory(toCreate);
                         }
