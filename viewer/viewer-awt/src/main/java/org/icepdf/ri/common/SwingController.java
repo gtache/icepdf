@@ -3582,15 +3582,15 @@ public class SwingController extends ComponentAdapter
         if (document.getStateManager().hasChangedSince(savedChanges)) {
             if (pdfClient != null) {
                 try {
-                    //TODO no choice but to dump file to append changes as long as IncrementalUpdater is obfuscated
-                    File tmp = Files.createTempFile(pdfClient.getName(), "." + FileExtensionUtils.pdf).toFile();
-                    try (final OutputStream out = new BufferedOutputStream(new FileOutputStream(tmp))) {
-                        document.saveToOutputStream(out);
-                    }
-                    try (final InputStream pdfIn = new BufferedInputStream(new FileInputStream(tmp))) {
-                        pdfClient.save(pdfIn);
-                    }
-                    tmp.delete();
+                    final PipedInputStream in = new PipedInputStream();
+                    new Thread(() -> {
+                        try (final PipedOutputStream out = new PipedOutputStream(in)) {
+                            document.saveToOutputStream(out);
+                        } catch (final IOException e) {
+                            logger.log(Level.WARNING, e, () -> "Error writing to output");
+                        }
+                    }).start();
+                    pdfClient.save(in);
                     savedChanges = document.getStateManager().getChanges();
                 } catch (IOException e) {
                     logger.log(Level.FINE, "IOException while saving dav", e);
