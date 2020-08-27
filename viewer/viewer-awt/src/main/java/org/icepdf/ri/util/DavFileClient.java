@@ -81,15 +81,21 @@ public class DavFileClient {
                 mimeType = new Tika().detect(name + "." + ext);
             }
             if (!sardine.exists(folderUrl)) {
-                final List<String> split = Arrays.asList(folderUrl.split("/"));
-                for (int i = split.size(); i > 1; --i) {
-                    final String parentUrl = String.join("/", split.subList(0, i));
-                    if (sardine.exists(parentUrl)) {
-                        for (int j = i; j <= split.size(); ++j) {
-                            final String toCreate = String.join("/", split.subList(0, j));
-                            sardine.createDirectory(toCreate);
-                        }
+                final boolean isHttps = folderUrl.startsWith("https");
+                final String startUrl = isHttps ? "https://" : "http://";
+                final List<String> folderUrls = Arrays.asList(folderUrl.substring(isHttps ? 8 : 7).split("/"));
+                int startIdx = folderUrls.size();
+                while (startIdx > 0) {
+                    final String folderUrl = startUrl + String.join("/", folderUrls.subList(0, startIdx));
+                    if (sardine.exists(folderUrl)) {
                         break;
+                    }
+                    startIdx--;
+                }
+                if (startIdx < folderUrls.size()) {
+                    for (int idx = startIdx; idx <= folderUrls.size(); ++idx) {
+                        final String toCreate = startUrl + String.join("/", folderUrls.subList(0, idx));
+                        sardine.createDirectory(toCreate);
                     }
                 }
             }
