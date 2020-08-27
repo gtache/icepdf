@@ -93,7 +93,7 @@ public class DavFileClient {
                     startIdx--;
                 }
                 if (startIdx < folderUrls.size()) {
-                    for (int idx = startIdx; idx <= folderUrls.size(); ++idx) {
+                    for (int idx = startIdx + 1; idx <= folderUrls.size(); ++idx) {
                         final String toCreate = startUrl + String.join("/", folderUrls.subList(0, idx));
                         sardine.createDirectory(toCreate);
                     }
