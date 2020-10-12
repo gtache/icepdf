@@ -12,10 +12,16 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
-public class DavFileClient {
+/**
+ * Represents a WebDav connection to a file
+ */
+public class DavFileClient implements AutoCloseable {
 
+    private static final Logger logger = Logger.getLogger(DavFileClient.class.getName());
     private final Sardine sardine;
     private final String url;
     private final String folderUrl;
@@ -28,15 +34,36 @@ public class DavFileClient {
     private File file;
     private InputStream stream;
     private String mimeType;
+    private String lock = null;
 
+    /**
+     * Instantiates a client with the given url and no credentials
+     *
+     * @param url The url
+     */
     public DavFileClient(final String url) {
         this(url, null, null);
     }
 
+    /**
+     * Instantiates a client with the given url and credentials
+     *
+     * @param url      The url
+     * @param username The username
+     * @param password The password
+     */
     public DavFileClient(final String url, final String username, final String password) {
         this(url, username, password, false);
     }
 
+    /**
+     * Instantiates a client with the given url and credentials
+     *
+     * @param url      The url
+     * @param username The username
+     * @param password The password
+     * @param readOnly Whether the client is readonly or not
+     */
     public DavFileClient(final String url, final String username, final String password, final boolean readOnly) {
         this.url = url;
         this.username = username;
@@ -46,17 +73,44 @@ public class DavFileClient {
         folderUrl = Arrays.stream(split).limit(split.length - 1).collect(Collectors.joining("/"));
         final String[] names = split[split.length - 1].split("\\.");
         name = names[0];
-        ext = names[1];
+        if (names.length == 1) {
+            ext = "";
+        } else {
+            ext = names[1];
+        }
         this.readOnly = readOnly;
+        setPreemptiveAuthenticationEnabled(true);
     }
 
+    /**
+     * Sets the preemptive authentication value
+     * Must be set to true if an action causes a NonRepeatableRequestException
+     *
+     * @param enabled true or false
+     */
+    public void setPreemptiveAuthenticationEnabled(final boolean enabled) {
+        if (enabled) {
+            sardine.enablePreemptiveAuthentication(url);
+        } else {
+            sardine.disablePreemptiveAuthentication();
+        }
+    }
+
+    /**
+     * @return The contents of the parent folder (siblings)
+     * @throws IOException
+     */
     public List<DavResource> getFolderContents() throws IOException {
         return sardine.list(folderUrl);
     }
 
+    /**
+     * @return A temporary copy file for this connection
+     * @throws IOException
+     */
     public File getFile() throws IOException {
         if (file == null) {
-            file = File.createTempFile(name, "." + ext);
+            file = File.createTempFile(name, ext.isEmpty() ? "" : "." + ext);
             try (final InputStream stream = sardine.get(url)) {
                 Files.copy(stream, file.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 mimeType = new Tika().detect(file);
@@ -65,98 +119,282 @@ public class DavFileClient {
         return file;
     }
 
+    /**
+     * @return The content stream of this connection
+     * @throws IOException
+     */
     public InputStream getStream() throws IOException {
-        if (stream == null || stream.available() == 0) {
-            this.stream = sardine.get(url);
-        }
+        resetStream();
         return stream;
     }
 
+    /**
+     * Resets the stream of this connection
+     *
+     * @throws IOException
+     */
+    public void resetStream() throws IOException {
+        close();
+        stream = sardine.get(url);
+    }
+
+    /**
+     * Saves the given inputstream to the remote url
+     *
+     * @param inputStream The data to save
+     * @throws IOException
+     */
     public void save(final InputStream inputStream) throws IOException {
         if (!readOnly) {
-            if (inputStream.markSupported()) {
-                mimeType = new Tika().detect(stream);
+            if (inputStream.markSupported() && inputStream.available() > 0) {
+                mimeType = new Tika().detect(inputStream);
             }
             if (mimeType == null || mimeType.equals("application/octet-stream")) {
-                mimeType = new Tika().detect(name + "." + ext);
+                mimeType = new Tika().detect(name + (ext.isEmpty() ? "" : "." + ext));
             }
-            if (!sardine.exists(folderUrl)) {
-                final boolean isHttps = folderUrl.startsWith("https");
-                final String startUrl = isHttps ? "https://" : "http://";
-                final List<String> folderUrls = Arrays.asList(folderUrl.substring(isHttps ? 8 : 7).split("/"));
-                int startIdx = folderUrls.size();
-                while (startIdx > 0) {
-                    final String folderUrl = startUrl + String.join("/", folderUrls.subList(0, startIdx));
-                    if (sardine.exists(folderUrl)) {
-                        break;
-                    }
-                    startIdx--;
-                }
-                if (startIdx < folderUrls.size()) {
-                    for (int idx = startIdx + 1; idx <= folderUrls.size(); ++idx) {
-                        final String toCreate = startUrl + String.join("/", folderUrls.subList(0, idx));
-                        sardine.createDirectory(toCreate);
-                    }
-                }
-            }
+            createParentDirectory(folderUrl);
             sardine.put(url, inputStream, mimeType);
             revision += 1;
         }
     }
 
+
+    private void createParentDirectory(final String url) throws IOException {
+        if (!sardine.exists(url)) {
+            final boolean isHttps = url.startsWith("https");
+            final String startUrl = isHttps ? "https://" : "http://";
+            final List<String> folderUrls = Arrays.asList(url.substring(isHttps ? 8 : 7).split("/"));
+            int startIdx = folderUrls.size();
+            while (startIdx > 0) {
+                final String folderUrl = startUrl + String.join("/", folderUrls.subList(0, startIdx));
+                if (sardine.exists(folderUrl)) {
+                    break;
+                }
+                startIdx--;
+            }
+            if (startIdx < folderUrls.size()) {
+                for (int idx = startIdx + 1; idx <= folderUrls.size(); ++idx) {
+                    final String toCreate = startUrl + String.join("/", folderUrls.subList(0, idx));
+                    logger.info("Creating dav folder " + toCreate);
+                    sardine.createDirectory(toCreate);
+                }
+            }
+        }
+    }
+
+    /**
+     * Closes the underlying stream
+     *
+     * @throws IOException
+     */
+    public void close() throws IOException {
+        if (stream != null) {
+            stream.close();
+        }
+    }
+
+    /**
+     * Deletes the resource
+     *
+     * @throws IOException
+     */
     public void delete() throws IOException {
-        if (!readOnly) {
+        if (!readOnly && exists()) {
             sardine.delete(url);
         }
     }
 
+    /**
+     * @return Whether the remote file exists or not
+     * @throws IOException
+     */
     public boolean exists() throws IOException {
         return sardine.exists(url);
     }
 
+    /**
+     * Renames the remote resource to the given name
+     *
+     * @param newName The new name
+     * @return The client managing the resource under the new name
+     * @throws IOException
+     */
+    public DavFileClient rename(final String newName) throws IOException {
+        return move(folderUrl + "/" + newName);
+    }
+
+    /**
+     * Moves the remote resource to the given url
+     *
+     * @param newUrl The new url
+     * @return The client managing the resource under the new url
+     * @throws IOException
+     */
+    public DavFileClient move(final String newUrl) throws IOException {
+        return move(newUrl, true);
+    }
+
+    /**
+     * Moves the remote resource to the given url
+     *
+     * @param newUrl    The new url
+     * @param overwrite Whether to overwrite the resource or not
+     * @return The client managing the resource under the new url
+     * @throws IOException
+     */
+    public DavFileClient move(final String newUrl, final boolean overwrite) throws IOException {
+        if (!readOnly) {
+            final String[] split = newUrl.split("/");
+            createParentDirectory(Arrays.stream(split).limit(split.length - 1).collect(Collectors.joining("/")));
+            sardine.move(url, newUrl, overwrite);
+            return new DavFileClient(newUrl, username, password);
+        } else {
+            return this;
+        }
+    }
+
+    /**
+     * Copies the resource to the given url
+     *
+     * @param newUrl The new url
+     * @return The client managing the new resource
+     * @throws IOException
+     */
+    public DavFileClient copy(final String newUrl) throws IOException {
+        return copy(newUrl, true);
+    }
+
+    /**
+     * Copies the resource to the given url
+     *
+     * @param newUrl    The new url
+     * @param overwrite Whether to overwrite or not
+     * @return The client managing the new resource
+     * @throws IOException
+     */
+    public DavFileClient copy(final String newUrl, final boolean overwrite) throws IOException {
+        final String[] split = newUrl.split("/");
+        createParentDirectory(Arrays.stream(split).limit(split.length - 1).collect(Collectors.joining("/")));
+        sardine.copy(url, newUrl, overwrite);
+        return new DavFileClient(newUrl, username, password);
+    }
+
+    /**
+     * Creates the directory
+     *
+     * @throws IOException
+     */
+    public void createDirectory() throws IOException {
+        if (!readOnly) {
+            sardine.createDirectory(url);
+        }
+    }
+
+    /**
+     * @return The name of the file
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * @return The extension of the file
+     */
     public String getExt() {
         return ext;
     }
 
+    /**
+     * @return The revision of the file
+     */
     public int getRevision() {
         return revision;
     }
 
+    /**
+     * @return The mimetype of the file
+     */
     public String getMimeType() {
         return mimeType;
     }
 
+    /**
+     * @return The parent folder url
+     */
     public String getFolderUrl() {
         return folderUrl;
     }
 
+    /**
+     * @return The url of the resource
+     */
     public String getUrl() {
         return url;
     }
 
+    /**
+     * @return The username for the connection
+     */
     public String getUsername() {
         return username;
     }
 
+    /**
+     * Sets the username for this connection
+     *
+     * @param username The username
+     */
     public void setUsername(final String username) {
         this.username = username;
         sardine.setCredentials(username, password);
     }
 
+    /**
+     * @return The password for the connection
+     */
     public String getPassword() {
         return password;
     }
 
+    /**
+     * Sets the password for this connection
+     *
+     * @param password The password
+     */
     public void setPassword(final String password) {
         this.password = password;
         sardine.setCredentials(username, password);
     }
 
+    /**
+     * @return Whether the connection is readonly or not
+     */
     public boolean isReadOnly() {
         return readOnly;
+    }
+
+    /**
+     * Locks the resource
+     */
+    public void lock() {
+        try {
+            this.lock = sardine.lock(url);
+        } catch (final IOException e) {
+            logger.log(Level.WARNING, e, () -> "Error locking " + url);
+        }
+    }
+
+    /**
+     * Unlocks the resource
+     */
+    public void unlock() {
+        if (lock != null) {
+            try {
+                sardine.unlock(url, lock);
+            } catch (final IOException e) {
+                logger.log(Level.WARNING, e, () -> "Error unlocking " + url);
+            }
+            lock = null;
+        }
     }
 }
