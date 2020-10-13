@@ -135,7 +135,9 @@ public class DavFileClient implements AutoCloseable {
      */
     public void resetStream() throws IOException {
         close();
-        stream = sardine.get(url);
+        if (exists()) {
+            stream = sardine.get(url);
+        }
     }
 
     /**
@@ -213,7 +215,7 @@ public class DavFileClient implements AutoCloseable {
     }
 
     /**
-     * Renames the remote resource to the given name
+     * Renames the remote resource to the given name. No-op if the file doesn't exist.
      *
      * @param newName The new name
      * @return The client managing the resource under the new name
@@ -224,7 +226,7 @@ public class DavFileClient implements AutoCloseable {
     }
 
     /**
-     * Moves the remote resource to the given url
+     * Moves the remote resource to the given url. No-op if the file doesn't exist.
      *
      * @param newUrl The new url
      * @return The client managing the resource under the new url
@@ -235,7 +237,7 @@ public class DavFileClient implements AutoCloseable {
     }
 
     /**
-     * Moves the remote resource to the given url
+     * Moves the remote resource to the given url. No-op if the file doesn't exist.
      *
      * @param newUrl    The new url
      * @param overwrite Whether to overwrite the resource or not
@@ -243,7 +245,7 @@ public class DavFileClient implements AutoCloseable {
      * @throws IOException
      */
     public DavFileClient move(final String newUrl, final boolean overwrite) throws IOException {
-        if (!readOnly) {
+        if (!readOnly && exists()) {
             final String[] split = newUrl.split("/");
             createParentDirectory(Arrays.stream(split).limit(split.length - 1).collect(Collectors.joining("/")));
             sardine.move(url, newUrl, overwrite);
@@ -254,7 +256,7 @@ public class DavFileClient implements AutoCloseable {
     }
 
     /**
-     * Copies the resource to the given url
+     * Copies the resource to the given url. No-op if the file doesn't exist.
      *
      * @param newUrl The new url
      * @return The client managing the new resource
@@ -265,7 +267,7 @@ public class DavFileClient implements AutoCloseable {
     }
 
     /**
-     * Copies the resource to the given url
+     * Copies the resource to the given url. No-op if the file doesn't exist.
      *
      * @param newUrl    The new url
      * @param overwrite Whether to overwrite or not
@@ -273,10 +275,14 @@ public class DavFileClient implements AutoCloseable {
      * @throws IOException
      */
     public DavFileClient copy(final String newUrl, final boolean overwrite) throws IOException {
-        final String[] split = newUrl.split("/");
-        createParentDirectory(Arrays.stream(split).limit(split.length - 1).collect(Collectors.joining("/")));
-        sardine.copy(url, newUrl, overwrite);
-        return new DavFileClient(newUrl, username, password);
+        if (exists()) {
+            final String[] split = newUrl.split("/");
+            createParentDirectory(Arrays.stream(split).limit(split.length - 1).collect(Collectors.joining("/")));
+            sardine.copy(url, newUrl, overwrite);
+            return new DavFileClient(newUrl, username, password);
+        } else {
+            return this;
+        }
     }
 
     /**

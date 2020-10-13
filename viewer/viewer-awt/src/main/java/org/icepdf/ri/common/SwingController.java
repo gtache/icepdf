@@ -2865,10 +2865,21 @@ public class SwingController extends ComponentAdapter
     }
 
     protected void openDavDocument() throws IOException, PDFException, PDFSecurityException {
-        InputStream stream = pdfClient.getStream();
-        document = new Document();
-        document.setInputStream(new BufferedInputStream(stream), pdfClient.getUrl());
-        commonNewDocumentHandling(pdfClient.getUrl());
+        if (pdfClient.exists()) {
+            final InputStream stream = pdfClient.getStream();
+            document = new Document();
+            document.setInputStream(new BufferedInputStream(stream), pdfClient.getUrl());
+            commonNewDocumentHandling(pdfClient.getUrl());
+        } else {
+            org.icepdf.ri.util.Resources.showMessageDialog(
+                    viewer,
+                    JOptionPane.INFORMATION_MESSAGE,
+                    messageBundle,
+                    "viewer.dialog.dav.notfound.title",
+                    "viewer.dialog.dav.notfound.msg",
+                    pdfClient.getUrl()
+            );
+        }
     }
 
 
