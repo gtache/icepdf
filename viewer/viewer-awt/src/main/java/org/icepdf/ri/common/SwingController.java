@@ -2867,9 +2867,7 @@ public class SwingController extends ComponentAdapter
     protected void openDavDocument() throws IOException, PDFException, PDFSecurityException {
         if (pdfClient.exists()) {
             final InputStream stream = pdfClient.getStream();
-            document = new Document();
-            document.setInputStream(new BufferedInputStream(stream), pdfClient.getUrl());
-            commonNewDocumentHandling(pdfClient.getUrl());
+            openDocument(new BufferedInputStream(stream),pdfClient.getUrl(), pdfClient.getUrl());
         } else {
             org.icepdf.ri.util.Resources.showMessageDialog(
                     viewer,
