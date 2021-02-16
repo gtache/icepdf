@@ -17,12 +17,10 @@ package org.icepdf.ri.viewer;
 
 import org.icepdf.core.util.Defs;
 import org.icepdf.ri.common.ViewModel;
-import org.icepdf.ri.util.DavFileClient;
-import org.icepdf.ri.util.FontPropertiesManager;
-import org.icepdf.ri.util.URLAccess;
-import org.icepdf.ri.util.ViewerPropertiesManager;
+import org.icepdf.ri.util.*;
 
 import javax.swing.*;
+import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
 import java.util.ResourceBundle;
 import java.util.logging.Level;
@@ -174,7 +172,7 @@ public class Launcher {
             urlAccess.dispose();
         }
         if (contentDav != null && !contentDav.isEmpty()) {
-            windowManager.newWindow(new DavFileClient(contentDav, user, password));
+            windowManager.newWindow(new DavFileClient(UriUtils.encodePath(contentDav, StandardCharsets.UTF_8), user, password));
         }
 
 

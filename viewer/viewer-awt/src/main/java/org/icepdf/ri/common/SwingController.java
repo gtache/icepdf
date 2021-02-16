@@ -78,6 +78,7 @@ import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -2776,7 +2777,7 @@ public class SwingController extends ComponentAdapter
     }
 
     private void openDavInSomeViewer(final String url) {
-        final DavFileClient client = new DavFileClient(url);
+        final DavFileClient client = new DavFileClient(UriUtils.encodePath(url, StandardCharsets.UTF_8));
         if (document == null) {
             openDocument(client);
         } else if (windowManagementCallback != null) {
